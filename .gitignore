@@ -1,0 +1,31 @@
+# Completely exclude virtual environment
+venv/
+.venv/
+env/
+ENV/
+virtualenv/
+lib/
+bin/
+include/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.Python
+
+# Data files
+*.csv
+DOGEUSDT_historical_data.csv
+DOGEUSDT_train.csv
+DOGEUSDT_test.csv
+
+# Environment & models
+.env
+*.pth
+*.pkl
+*.dylib
+
+# IDE
+.vscode/
+
