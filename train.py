@@ -98,8 +98,19 @@ def to_tensor(x, dtype=torch.float32):
         return torch.tensor(x, dtype=dtype, device=device)
     return x.to(dtype=dtype, device=device)
 
+def load_checkpoint(model, optimizer, checkpoint_path='trading_model_checkpoint.pth'):
+    if os.path.exists(checkpoint_path):
+        print(f"Loading checkpoint from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_episode = checkpoint['episode']
+        epsilon = checkpoint['epsilon']
+        return start_episode, epsilon
+    return 0, epsilon_start
+
 # Modified training function
-def train(env, episodes=1000, batch_size=256, gamma=0.99,  # Increased batch size
+def train(env, checkpoint_path='trading_model_checkpoint.pth', episodes=1000, batch_size=256, gamma=0.99,
           epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995,
           learning_rate=0.001, target_update=10):
     
@@ -112,7 +123,15 @@ def train(env, episodes=1000, batch_size=256, gamma=0.99,  # Increased batch siz
     
     policy_net = DQN(input_dim, output_dim).to(device)
     target_net = DQN(input_dim, output_dim).to(device)
+    optimizer = optim.Adam(policy_net.parameters(), lr=learning_rate)
+    
+    # Load checkpoint if exists
+    start_episode, epsilon = load_checkpoint(policy_net, optimizer, checkpoint_path)
+    
+    # Update target network with loaded weights
     target_net.load_state_dict(policy_net.state_dict())
+    
+    print(f"Resuming training from episode {start_episode}")
     
     # Use multiple workers for data loading
     memory = ReplayBuffer()
@@ -123,14 +142,10 @@ def train(env, episodes=1000, batch_size=256, gamma=0.99,  # Increased batch siz
         pin_memory=True if device.type == 'cuda' else False
     )
     
-    optimizer = optim.Adam(policy_net.parameters(), lr=learning_rate)
-    
     # Enable anomaly detection during training
     torch.autograd.set_detect_anomaly(True)
     
-    epsilon = epsilon_start
-    
-    for episode in range(episodes):
+    for episode in range(start_episode, episodes):
         state = env.reset()
         episode_reward = 0
         done = False
