@@ -7,7 +7,13 @@ from collections import deque
 import random
 from trading_env import TradingEnv
 import psutil
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Dataset
+import torch.multiprocessing as mp
+import os
+
+# Set number of threads
+num_workers = os.cpu_count()
+torch.set_num_threads(num_workers)
 
 # Read processed data
 df = pd.read_csv('DOGEUSDT_train.csv')
@@ -50,10 +56,16 @@ def get_optimal_batch_size(min_size=32, max_size=512):
     # Round to nearest power of 2 for better performance
     return 2 ** int(np.log2(optimal_size))
 
-class ReplayBuffer:
+class ReplayBuffer(Dataset):  # Inherit from Dataset
     def __init__(self, capacity=10000):
         self.buffer = deque(maxlen=capacity)
         
+    def __getitem__(self, idx):
+        return self.buffer[idx]
+        
+    def __len__(self):
+        return len(self.buffer)
+
     def push(self, state, action, reward, next_state, done):
         # Convert to numpy arrays with float32 for M2 optimization
         state = np.array(state, dtype=np.float32)
@@ -79,9 +91,6 @@ class ReplayBuffer:
             torch.from_numpy(next_states).to(device),
             torch.from_numpy(dones).to(device)
         )
-    
-    def __len__(self):
-        return len(self.buffer)
 
 # Helper function for tensor conversion
 def to_tensor(x, dtype=torch.float32):
@@ -89,9 +98,14 @@ def to_tensor(x, dtype=torch.float32):
         return torch.tensor(x, dtype=dtype, device=device)
     return x.to(dtype=dtype, device=device)
 
-def train(env, episodes=1000, batch_size=64, gamma=0.99, 
+# Modified training function
+def train(env, episodes=1000, batch_size=256, gamma=0.99,  # Increased batch size
           epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995,
           learning_rate=0.001, target_update=10):
+    
+    # Enable cuDNN benchmark for optimal performance
+    if device.type == 'cuda' or device.type == 'mps':
+        torch.backends.cudnn.benchmark = True
     
     input_dim = env.observation_space.shape[0]
     output_dim = env.action_space.n
@@ -100,8 +114,20 @@ def train(env, episodes=1000, batch_size=64, gamma=0.99,
     target_net = DQN(input_dim, output_dim).to(device)
     target_net.load_state_dict(policy_net.state_dict())
     
-    optimizer = optim.Adam(policy_net.parameters(), lr=learning_rate)
+    # Use multiple workers for data loading
     memory = ReplayBuffer()
+    dataloader = DataLoader(
+        memory,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True if device.type == 'cuda' else False
+    )
+    
+    optimizer = optim.Adam(policy_net.parameters(), lr=learning_rate)
+    
+    # Enable anomaly detection during training
+    torch.autograd.set_detect_anomaly(True)
+    
     epsilon = epsilon_start
     
     for episode in range(episodes):
@@ -156,9 +182,9 @@ def train(env, episodes=1000, batch_size=64, gamma=0.99,
         epsilon = max(epsilon_end, epsilon * epsilon_decay)
         
         # Log progress
-        if episode % 10 == 0:
+        if episode % 1 == 0:
             print(f"Episode {episode}, Reward: {episode_reward:.2f}, Epsilon: {epsilon:.2f}")
-            env.render_net_worth()
+            # env.render_net_worth()
             
             # Save checkpoint
             torch.save({
@@ -170,6 +196,7 @@ def train(env, episodes=1000, batch_size=64, gamma=0.99,
             }, 'trading_model_checkpoint.pth')
 
 if __name__ == "__main__":
-    batch_size = get_optimal_batch_size()
+    # batch_size = get_optimal_batch_size()
+    batch_size = 1024*32
     print(f"Using optimal batch size: {batch_size}")
     train(env)
