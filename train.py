@@ -98,7 +98,8 @@ def to_tensor(x, dtype=torch.float32):
         return torch.tensor(x, dtype=dtype, device=device)
     return x.to(dtype=dtype, device=device)
 
-def load_checkpoint(model, optimizer, checkpoint_path='trading_model_checkpoint.pth'):
+def load_checkpoint(model, optimizer, epsilon_start, checkpoint_path='trading_model_checkpoint.pth'):
+    """Load checkpoint if exists, otherwise return initial values"""
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path)
@@ -107,6 +108,7 @@ def load_checkpoint(model, optimizer, checkpoint_path='trading_model_checkpoint.
         start_episode = checkpoint['episode']
         epsilon = checkpoint['epsilon']
         return start_episode, epsilon
+    print("No checkpoint found, starting from scratch")
     return 0, epsilon_start
 
 # Modified training function
@@ -126,7 +128,12 @@ def train(env, checkpoint_path='trading_model_checkpoint.pth', episodes=1000, ba
     optimizer = optim.Adam(policy_net.parameters(), lr=learning_rate)
     
     # Load checkpoint if exists
-    start_episode, epsilon = load_checkpoint(policy_net, optimizer, checkpoint_path)
+    start_episode, epsilon = load_checkpoint(
+        policy_net, 
+        optimizer, 
+        epsilon_start,  # Pass epsilon_start here
+        checkpoint_path
+    )
     
     # Update target network with loaded weights
     target_net.load_state_dict(policy_net.state_dict())
