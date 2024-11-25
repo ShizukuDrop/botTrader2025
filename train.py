@@ -64,17 +64,23 @@ class ReplayBuffer:
         indices = random.sample(range(len(self.buffer)), batch_size)
         batch = [self.buffer[i] for i in indices]
         
-        # Convert to tensors efficiently
-        states = torch.tensor([s[0] for s in batch], dtype=torch.float32).to(device)
-        actions = torch.tensor([s[1] for s in batch], dtype=torch.long).to(device)
-        rewards = torch.tensor([s[2] for s in batch], dtype=torch.float32).to(device)
-        next_states = torch.tensor([s[3] for s in batch], dtype=torch.float32).to(device)
-        dones = torch.tensor([s[4] for s in batch], dtype=torch.bool).to(device)
+        # Convert to tensors and ensure consistent device placement
+        states = torch.FloatTensor([s[0] for s in batch]).to(device)
+        actions = torch.LongTensor([s[1] for s in batch]).to(device)
+        rewards = torch.FloatTensor([s[2] for s in batch]).to(device)
+        next_states = torch.FloatTensor([s[3] for s in batch]).to(device)
+        dones = torch.BoolTensor([s[4] for s in batch]).to(device)
         
         return states, actions, rewards, next_states, dones
     
     def __len__(self):
         return len(self.buffer)
+
+# Helper function for tensor conversion
+def to_tensor(x, dtype=torch.float32):
+    if isinstance(x, np.ndarray):
+        return torch.tensor(x, dtype=dtype, device=device)
+    return x.to(dtype=dtype, device=device)
 
 def train(env, episodes=1000, batch_size=64, gamma=0.99, 
           epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995,
@@ -115,11 +121,12 @@ def train(env, episodes=1000, batch_size=64, gamma=0.99,
                 batch = memory.sample(batch_size)
                 states, actions, rewards, next_states, dones = batch
                 
-                states = torch.FloatTensor(states).to(device)
-                actions = torch.LongTensor(actions).to(device)
-                rewards = torch.FloatTensor(rewards).to(device)
-                next_states = torch.FloatTensor(next_states).to(device)
-                dones = torch.FloatTensor(dones).to(device)
+                # Use helper function for all tensor conversions
+                states = to_tensor(states, dtype=torch.float32)
+                actions = to_tensor(actions, dtype=torch.long)
+                rewards = to_tensor(rewards, dtype=torch.float32)
+                next_states = to_tensor(next_states, dtype=torch.float32)
+                dones = to_tensor(dones, dtype=torch.float32)
                 
                 # Compute Q values
                 current_q = policy_net(states).gather(1, actions.unsqueeze(1))
