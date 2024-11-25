@@ -64,14 +64,21 @@ class ReplayBuffer:
         indices = random.sample(range(len(self.buffer)), batch_size)
         batch = [self.buffer[i] for i in indices]
         
-        # Convert to tensors and ensure consistent device placement
-        states = torch.FloatTensor([s[0] for s in batch]).to(device)
-        actions = torch.LongTensor([s[1] for s in batch]).to(device)
-        rewards = torch.FloatTensor([s[2] for s in batch]).to(device)
-        next_states = torch.FloatTensor([s[3] for s in batch]).to(device)
-        dones = torch.BoolTensor([s[4] for s in batch]).to(device)
+        # Convert to numpy arrays first
+        states = np.array([s[0] for s in batch], dtype=np.float32)
+        actions = np.array([s[1] for s in batch], dtype=np.int64)
+        rewards = np.array([s[2] for s in batch], dtype=np.float32)
+        next_states = np.array([s[3] for s in batch], dtype=np.float32)
+        dones = np.array([s[4] for s in batch], dtype=np.float32)
         
-        return states, actions, rewards, next_states, dones
+        # Convert to tensors
+        return (
+            torch.from_numpy(states).to(device),
+            torch.from_numpy(actions).to(device),
+            torch.from_numpy(rewards).to(device),
+            torch.from_numpy(next_states).to(device),
+            torch.from_numpy(dones).to(device)
+        )
     
     def __len__(self):
         return len(self.buffer)
@@ -106,7 +113,9 @@ def train(env, episodes=1000, batch_size=64, gamma=0.99,
             # Epsilon-greedy action selection
             if random.random() > epsilon:
                 with torch.no_grad():
-                    state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
+                    # Convert to numpy array first, then to tensor
+                    state_array = np.array([state], dtype=np.float32)
+                    state_tensor = torch.from_numpy(state_array).to(device)
                     action = policy_net(state_tensor).max(1)[1].item()
             else:
                 action = env.action_space.sample()
